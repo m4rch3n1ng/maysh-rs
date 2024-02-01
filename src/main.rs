@@ -1,5 +1,10 @@
-use gix::{hash::Prefix, Id, Repository};
-use std::{fmt::Display, fs, path::Path};
+use gix::{bstr::BString, hash::Prefix, Id, Repository};
+use owo_colors::OwoColorize;
+use std::{
+	fmt::{Display, Write},
+	fs,
+	path::Path,
+};
 
 fn trim_in_place(mut string: String) -> String {
 	let trimmed = string.trim_end();
@@ -23,19 +28,35 @@ fn hash(repo: &Repository, hash: &str) -> Prefix {
 	rel(hash)
 }
 
-fn branch(repo: &Repository) {
-	let head = repo.head().unwrap();
+#[derive(Debug)]
+enum Head {
+	Branch(BString),
+	Commit(Prefix),
+}
 
+impl Display for Head {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			Head::Branch(branch) => write!(f, "{}", branch),
+			Head::Commit(hash) => write!(f, ":{}", hash),
+		}
+	}
+}
+
+fn branch(repo: &Repository) -> Head {
+	let head = repo.head().unwrap();
 	let branch = head.referent_name();
+
 	match branch {
 		Some(branch) => {
-			println!("branch: {}", branch.shorten());
+			let branch = branch.shorten();
+			Head::Branch(branch.to_owned())
 		}
 		None => {
 			let hash = head.id().unwrap();
 			let hash = rel(hash);
-			println!("hash: :{}", hash);
-		},
+			Head::Commit(hash)
+		}
 	}
 }
 
@@ -135,16 +156,26 @@ fn mode(repo: &Repository, path: &Path) -> Option<Mode> {
 	}
 }
 
-fn main() {
-	let repo = gix::discover(".").unwrap();
-	assert!(!repo.is_bare(), "repo shouldn't be bare");
-
-	branch(&repo);
+fn git() -> Result<String, Box<dyn std::error::Error>> {
+	let repo = gix::discover(".")?;
+	let branch = branch(&repo);
 
 	let path = repo.path();
 	let mode = mode(&repo, path);
-	match mode {
-		Some(mode) => println!("{}", mode),
-		None => println!("no mode"),
+
+	let mut string = String::new();
+	write!(string, "{}", "(".green())?;
+
+	if let Some(mode) = mode {
+		write!(string, "{} ", mode.red())?;
+	}
+
+	write!(string, "{}{}", branch.green(), ")".green())?;
+	Ok(string)
+}
+
+fn main() {
+	if let Ok(git) = git() {
+		print!("{}", git);
 	}
 }
