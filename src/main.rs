@@ -1,9 +1,10 @@
 use gix::{bstr::BString, hash::Prefix, Id, Repository};
 use owo_colors::OwoColorize;
 use std::{
+	env::current_dir,
 	fmt::{Display, Write},
 	fs,
-	path::Path,
+	path::{Path, PathBuf},
 };
 
 fn trim_in_place(mut string: String) -> String {
@@ -174,8 +175,54 @@ fn git() -> Result<String, Box<dyn std::error::Error>> {
 	Ok(string)
 }
 
+fn start() -> &'static str {
+	match std::env::var("USER").as_deref() {
+		Ok("root") => "#",
+		_ => "$",
+	}
+}
+
+#[repr(transparent)]
+struct Dir(PathBuf);
+
+impl Display for Dir {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		if let Some(name) = self.0.file_name() {
+			let path = Path::new(name);
+			write!(f, "{}", path.display().cyan())
+		} else {
+			write!(f, "{}", self.0.display().cyan())
+		}
+	}
+}
+
+fn dir() -> Dir {
+	let path = current_dir().unwrap_or_default();
+	Dir(path)
+}
+
+#[repr(transparent)]
+struct User(String);
+
+impl Display for User {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "{}", self.0.yellow())
+	}
+}
+
+fn usr() -> User {
+	let env = std::env::var("USER").unwrap_or_default();
+	User(env)
+}
+
 fn main() {
+	let start = start();
+	let usr = usr();
+	let dir = dir();
+
 	if let Ok(git) = git() {
-		print!("{}", git);
+		print!("{} {} {} {} >> ", start, usr, dir, git);
+	} else {
+		print!("{} {} {} >> ", start, usr, dir);
 	}
 }
