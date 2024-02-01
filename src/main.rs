@@ -175,10 +175,24 @@ fn git() -> Result<String, Box<dyn std::error::Error>> {
 	Ok(string)
 }
 
-fn start() -> &'static str {
+enum Start {
+	Root,
+	User
+}
+
+impl Display for Start {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			Start::Root => write!(f, "{}", "#".bold().red()),
+			Start::User => write!(f, "$"),
+		}
+	}
+}
+
+fn start() -> Start {
 	match std::env::var("USER").as_deref() {
-		Ok("root") => "#",
-		_ => "$",
+		Ok("root") => Start::Root,
+		_ => Start::User,
 	}
 }
 
