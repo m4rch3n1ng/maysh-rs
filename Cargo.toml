@@ -5,4 +5,4 @@ edition = "2021"
 
 [dependencies]
 gix = { version = "0.63.0", default-features = false, features = ["revision"] }
-owo-colors = "4.0.0"
+owo-colors = "4.1.0"
