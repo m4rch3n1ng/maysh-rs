@@ -38,8 +38,8 @@ enum Head {
 impl Display for Head {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
-			Head::Branch(branch) => write!(f, "{}", branch),
-			Head::Commit(hash) => write!(f, ":{}", hash),
+			Head::Branch(branch) => write!(f, "{branch}"),
+			Head::Commit(hash) => write!(f, ":{hash}"),
 		}
 	}
 }
@@ -84,11 +84,11 @@ impl Display for Mode {
 				write!(f, "rbs")?;
 
 				if let Some(branch) = branch {
-					write!(f, " {}", branch)?;
+					write!(f, " {branch}")?;
 				}
 
 				if let Some((sta, end)) = status {
-					write!(f, " {}/{}", sta, end)?;
+					write!(f, " {sta}/{end}")?;
 				}
 
 				Ok(())
@@ -97,19 +97,19 @@ impl Display for Mode {
 				write!(f, "bsc")?;
 
 				if let Some(branch) = branch {
-					write!(f, " {}", branch)?;
+					write!(f, " {branch}")?;
 				}
 
 				Ok(())
 			}
 			Mode::Merge(ref hash) => {
-				write!(f, "mrg :{}", hash)
+				write!(f, "mrg :{hash}")
 			}
 			Mode::CherryPick(ref hash) => {
-				write!(f, "chp :{}", hash)
+				write!(f, "chp :{hash}")
 			}
 			Mode::Revert(ref hash) => {
-				write!(f, "rvt :{}", hash)
+				write!(f, "rvt :{hash}")
 			}
 		}
 	}
@@ -235,8 +235,8 @@ fn main() {
 	let dir = dir();
 
 	if let Ok(git) = git() {
-		print!("{} {} {} {} >> ", start, usr, dir, git);
+		print!("{start} {usr} {dir} {git} >> ");
 	} else {
-		print!("{} {} {} >> ", start, usr, dir);
+		print!("{start} {usr} {dir} >> ");
 	}
 }

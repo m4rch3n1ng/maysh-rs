@@ -7,3 +7,6 @@ license = "MIT"
 [dependencies]
 gix = { version = "0.71.0", default-features = false, features = ["revision"] }
 owo-colors = "4.2.0"
+
+[lints.clippy]
+uninlined_format_args = "warn"
