@@ -11,11 +11,6 @@ fn trim_in_place(mut string: String) -> String {
 	string
 }
 
-fn head_name(string: String) -> String {
-	let st = string.replace("refs/heads/", "");
-	trim_in_place(st)
-}
-
 // https://github.com/Byron/gitoxide/issues/1268
 fn rel(rev: Id) -> Prefix {
 	rev.shorten().unwrap()
@@ -60,12 +55,24 @@ impl Display for Head {
 }
 
 #[derive(Debug)]
+struct Status {
+	num: String,
+	end: String,
+}
+
+impl Display for Status {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "{}/{}", self.num, self.end)
+	}
+}
+
+#[derive(Debug)]
 #[must_use]
 enum Mode {
 	ApplyMailbox,
 	Rebase,
 	AmRbs,
-	RebaseInt(Option<String>, Option<(String, String)>),
+	RebaseInt(Option<Head>, Option<Status>),
 	Bisect(Option<String>),
 	Merge(Prefix),
 	CherryPick(Prefix),
@@ -87,23 +94,36 @@ impl Mode {
 		} else if path.join("rebase-merge").is_dir() {
 			let path = path.join("rebase-merge");
 
-			let branch = std::fs::read_to_string(path.join("head-name"))
-				.ok()
-				.map(head_name);
-			let status = std::fs::read_to_string(path.join("msgnum"))
-				.ok()
-				.map(trim_in_place)
-				.zip(
-					std::fs::read_to_string(path.join("end"))
-						.ok()
-						.map(trim_in_place),
-				);
+			let branch = if let Ok(head) = std::fs::read_to_string(path.join("head-name"))
+				&& let Some(head) = head.strip_prefix("refs/heads/")
+			{
+				let branch = BString::from(head.trim_end());
+				Some(Head::Branch(branch))
+			} else if let Ok(head) = std::fs::read_to_string(path.join("orig-head")) {
+				let hash = hash(repo, &head);
+				Some(Head::Commit(hash))
+			} else {
+				None
+			};
+
+			let status = if let Ok(num) = std::fs::read_to_string(path.join("msgnum"))
+				&& let Ok(end) = std::fs::read_to_string(path.join("end"))
+			{
+				let status = Status {
+					num: trim_in_place(num),
+					end: trim_in_place(end),
+				};
+				Some(status)
+			} else {
+				None
+			};
 
 			Some(Mode::RebaseInt(branch, status))
 		} else if path.join("BISECT_LOG").is_file() {
 			let branch = std::fs::read_to_string(path.join("BISECT_START"))
 				.ok()
 				.map(trim_in_place);
+
 			Some(Mode::Bisect(branch))
 		} else if let Ok(sha) = std::fs::read_to_string(path.join("MERGE_HEAD")) {
 			let hash = hash(repo, &sha);
@@ -133,8 +153,8 @@ impl Display for Mode {
 					write!(f, " {branch}")?;
 				}
 
-				if let Some((sta, end)) = status {
-					write!(f, " {sta}/{end}")?;
+				if let Some(status) = status {
+					write!(f, " {status}")?;
 				}
 
 				Ok(())
