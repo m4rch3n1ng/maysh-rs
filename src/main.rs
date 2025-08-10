@@ -151,11 +151,11 @@ impl Mode {
 
 impl Display for Mode {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		match *self {
+		match self {
 			Mode::ApplyMailbox => write!(f, "am"),
 			Mode::Rebase => write!(f, "rbs"),
 			Mode::AmRbs => write!(f, "am/rbs"),
-			Mode::RebaseInt(ref branch, ref status) => {
+			Mode::RebaseInt(branch, status) => {
 				write!(f, "rbs")?;
 
 				if let Some(branch) = branch {
@@ -168,7 +168,7 @@ impl Display for Mode {
 
 				Ok(())
 			}
-			Mode::Bisect(ref branch) => {
+			Mode::Bisect(branch) => {
 				write!(f, "bsc")?;
 
 				if let Some(branch) = branch {
@@ -177,13 +177,13 @@ impl Display for Mode {
 
 				Ok(())
 			}
-			Mode::Merge(ref rev) => {
+			Mode::Merge(rev) => {
 				write!(f, "mrg {rev}")
 			}
-			Mode::CherryPick(ref rev) => {
+			Mode::CherryPick(rev) => {
 				write!(f, "chp {rev}")
 			}
-			Mode::Revert(ref rev) => {
+			Mode::Revert(rev) => {
 				write!(f, "rvt {rev}")
 			}
 		}
