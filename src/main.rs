@@ -1,9 +1,7 @@
 use gix::{Id, Repository, bstr::BString, hash::Prefix};
 use owo_colors::OwoColorize;
 use std::{
-	env::current_dir,
 	fmt::{Display, Write},
-	fs,
 	path::{Path, PathBuf},
 };
 
@@ -35,28 +33,28 @@ enum Head {
 	Commit(Prefix),
 }
 
+impl Head {
+	fn new(repo: &Repository) -> Self {
+		let head = repo.head().unwrap();
+		match head.referent_name() {
+			Some(branch) => {
+				let branch = branch.shorten();
+				Head::Branch(branch.to_owned())
+			}
+			None => {
+				let hash = head.id().unwrap();
+				let hash = rel(hash);
+				Head::Commit(hash)
+			}
+		}
+	}
+}
+
 impl Display for Head {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
 			Head::Branch(branch) => write!(f, "{branch}"),
 			Head::Commit(hash) => write!(f, ":{hash}"),
-		}
-	}
-}
-
-fn branch(repo: &Repository) -> Head {
-	let head = repo.head().unwrap();
-	let branch = head.referent_name();
-
-	match branch {
-		Some(branch) => {
-			let branch = branch.shorten();
-			Head::Branch(branch.to_owned())
-		}
-		None => {
-			let hash = head.id().unwrap();
-			let hash = rel(hash);
-			Head::Commit(hash)
 		}
 	}
 }
@@ -72,6 +70,54 @@ enum Mode {
 	Merge(Prefix),
 	CherryPick(Prefix),
 	Revert(Prefix),
+}
+
+impl Mode {
+	// thx https://github.com/Byron/gitoxide/blob/31801420e1bef1ebf32e14caf73ba29ddbc36443/gix/src/repository/state.rs#L3
+	// thx https://github.com/Byron/gitoxide/blob/31801420e1bef1ebf32e14caf73ba29ddbc36443/gix/src/state.rs#L3
+	fn new(repo: &Repository, path: &Path) -> Option<Mode> {
+		if path.join("rebase-apply/applying").is_file() {
+			Some(Mode::ApplyMailbox)
+		} else if path.join("rebase-apply/rebasing").is_file() {
+			// todo rebase steps / extra info ?
+			// idk how to get into this mode lol
+			Some(Mode::Rebase)
+		} else if path.join("rebase-apply").is_dir() {
+			Some(Mode::AmRbs)
+		} else if path.join("rebase-merge").is_dir() {
+			let path = path.join("rebase-merge");
+
+			let branch = std::fs::read_to_string(path.join("head-name"))
+				.ok()
+				.map(head_name);
+			let status = std::fs::read_to_string(path.join("msgnum"))
+				.ok()
+				.map(trim_in_place)
+				.zip(
+					std::fs::read_to_string(path.join("end"))
+						.ok()
+						.map(trim_in_place),
+				);
+
+			Some(Mode::RebaseInt(branch, status))
+		} else if path.join("BISECT_LOG").is_file() {
+			let branch = std::fs::read_to_string(path.join("BISECT_START"))
+				.ok()
+				.map(trim_in_place);
+			Some(Mode::Bisect(branch))
+		} else if let Ok(sha) = std::fs::read_to_string(path.join("MERGE_HEAD")) {
+			let hash = hash(repo, &sha);
+			Some(Mode::Merge(hash))
+		} else if let Ok(sha) = std::fs::read_to_string(path.join("CHERRY_PICK_HEAD")) {
+			let hash = hash(repo, &sha);
+			Some(Mode::CherryPick(hash))
+		} else if let Ok(sha) = std::fs::read_to_string(path.join("REVERT_HEAD")) {
+			let hash = hash(repo, &sha);
+			Some(Mode::Revert(hash))
+		} else {
+			None
+		}
+	}
 }
 
 impl Display for Mode {
@@ -115,59 +161,15 @@ impl Display for Mode {
 	}
 }
 
-// thx https://github.com/Byron/gitoxide/blob/31801420e1bef1ebf32e14caf73ba29ddbc36443/gix/src/repository/state.rs#L3
-// thx https://github.com/Byron/gitoxide/blob/31801420e1bef1ebf32e14caf73ba29ddbc36443/gix/src/state.rs#L3
-fn mode(repo: &Repository, path: &Path) -> Option<Mode> {
-	if path.join("rebase-apply/applying").is_file() {
-		Some(Mode::ApplyMailbox)
-	} else if path.join("rebase-apply/rebasing").is_file() {
-		// todo rebase steps / extra info ?
-		// idk how to get into this mode lol
-		Some(Mode::Rebase)
-	} else if path.join("rebase-apply").is_dir() {
-		Some(Mode::AmRbs)
-	} else if path.join("rebase-merge").is_dir() {
-		let path = path.join("rebase-merge");
-
-		let branch = fs::read_to_string(path.join("head-name"))
-			.ok()
-			.map(head_name);
-		let status = fs::read_to_string(path.join("msgnum"))
-			.ok()
-			.map(trim_in_place)
-			.zip(fs::read_to_string(path.join("end")).ok().map(trim_in_place));
-
-		Some(Mode::RebaseInt(branch, status))
-	} else if path.join("BISECT_LOG").is_file() {
-		let branch = fs::read_to_string(path.join("BISECT_START"))
-			.ok()
-			.map(trim_in_place);
-		Some(Mode::Bisect(branch))
-	} else if let Ok(sha) = fs::read_to_string(path.join("MERGE_HEAD")) {
-		let hash = hash(repo, &sha);
-		Some(Mode::Merge(hash))
-	} else if let Ok(sha) = fs::read_to_string(path.join("CHERRY_PICK_HEAD")) {
-		let hash = hash(repo, &sha);
-		Some(Mode::CherryPick(hash))
-	} else if let Ok(sha) = fs::read_to_string(path.join("REVERT_HEAD")) {
-		let hash = hash(repo, &sha);
-		Some(Mode::Revert(hash))
-	} else {
-		None
-	}
-}
-
 fn git() -> Result<String, Box<dyn std::error::Error>> {
 	let repo = gix::discover(".")?;
-	let branch = branch(&repo);
-
-	let path = repo.path();
-	let mode = mode(&repo, path);
+	let branch = Head::new(&repo);
 
 	let mut string = String::new();
 	write!(string, "{}", "(".green())?;
 
-	if let Some(mode) = mode {
+	let path = repo.path();
+	if let Some(mode) = Mode::new(&repo, path) {
 		write!(string, "{} ", mode.red())?;
 	}
 
@@ -180,6 +182,15 @@ enum Start {
 	User,
 }
 
+impl Start {
+	fn new(usr: &User) -> Self {
+		match &*usr.0 {
+			"root" => Start::Root,
+			_ => Start::User,
+		}
+	}
+}
+
 impl Display for Start {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
@@ -189,34 +200,35 @@ impl Display for Start {
 	}
 }
 
-fn start() -> Start {
-	match std::env::var("USER").as_deref() {
-		Ok("root") => Start::Root,
-		_ => Start::User,
-	}
-}
-
 #[repr(transparent)]
 struct Dir(PathBuf);
+
+impl Dir {
+	fn cwd() -> Self {
+		let path = std::env::current_dir().unwrap_or_default();
+		Dir(path)
+	}
+}
 
 impl Display for Dir {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		if let Some(name) = self.0.file_name() {
-			let path = Path::new(name);
-			write!(f, "{}", path.display().cyan())
+			write!(f, "{}", name.display().cyan())
 		} else {
 			write!(f, "{}", self.0.display().cyan())
 		}
 	}
 }
 
-fn dir() -> Dir {
-	let path = current_dir().unwrap_or_default();
-	Dir(path)
-}
-
 #[repr(transparent)]
 struct User(String);
+
+impl User {
+	fn current() -> Self {
+		let env = std::env::var("USER").unwrap_or_default();
+		User(env)
+	}
+}
 
 impl Display for User {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -224,15 +236,10 @@ impl Display for User {
 	}
 }
 
-fn usr() -> User {
-	let env = std::env::var("USER").unwrap_or_default();
-	User(env)
-}
-
 fn main() {
-	let start = start();
-	let usr = usr();
-	let dir = dir();
+	let usr = User::current();
+	let start = Start::new(&usr);
+	let dir = Dir::cwd();
 
 	if let Ok(git) = git() {
 		print!("{start} {usr} {dir} {git} >> ");
