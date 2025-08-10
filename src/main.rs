@@ -1,4 +1,4 @@
-use gix::{bstr::BString, hash::Prefix, Id, Repository};
+use gix::{Id, Repository, bstr::BString, hash::Prefix};
 use owo_colors::OwoColorize;
 use std::{
 	env::current_dir,
