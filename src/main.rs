@@ -11,21 +11,30 @@ fn trim_in_place(mut string: String) -> String {
 	string
 }
 
-// https://github.com/Byron/gitoxide/issues/1268
-fn rel(rev: Id) -> Prefix {
-	rev.shorten().unwrap()
+#[derive(Debug)]
+struct Revision(Prefix);
+
+impl Revision {
+	fn new(rev: Id) -> Self {
+		Revision(rev.shorten().unwrap())
+	}
+
+	fn parse(repo: &Repository, hash: &str) -> Self {
+		let hash = repo.rev_parse_single(hash.trim()).unwrap();
+		Revision::new(hash)
+	}
 }
 
-fn hash(repo: &Repository, hash: &str) -> Prefix {
-	let hash = hash.trim();
-	let hash = repo.rev_parse_single(hash).unwrap();
-	rel(hash)
+impl Display for Revision {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, ":{}", self.0)
+	}
 }
 
 #[derive(Debug)]
 enum Head {
 	Branch(BString),
-	Commit(Prefix),
+	Commit(Revision),
 }
 
 impl Head {
@@ -38,7 +47,7 @@ impl Head {
 			}
 			None => {
 				let hash = head.id().unwrap();
-				let hash = rel(hash);
+				let hash = Revision::new(hash);
 				Head::Commit(hash)
 			}
 		}
@@ -49,7 +58,7 @@ impl Display for Head {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
 			Head::Branch(branch) => write!(f, "{branch}"),
-			Head::Commit(hash) => write!(f, ":{hash}"),
+			Head::Commit(hash) => write!(f, "{hash}"),
 		}
 	}
 }
@@ -74,9 +83,9 @@ enum Mode {
 	AmRbs,
 	RebaseInt(Option<Head>, Option<Status>),
 	Bisect(Option<String>),
-	Merge(Prefix),
-	CherryPick(Prefix),
-	Revert(Prefix),
+	Merge(Revision),
+	CherryPick(Revision),
+	Revert(Revision),
 }
 
 impl Mode {
@@ -100,7 +109,7 @@ impl Mode {
 				let branch = BString::from(head.trim_end());
 				Some(Head::Branch(branch))
 			} else if let Ok(head) = std::fs::read_to_string(path.join("orig-head")) {
-				let hash = hash(repo, &head);
+				let hash = Revision::parse(repo, &head);
 				Some(Head::Commit(hash))
 			} else {
 				None
@@ -126,13 +135,13 @@ impl Mode {
 
 			Some(Mode::Bisect(branch))
 		} else if let Ok(sha) = std::fs::read_to_string(path.join("MERGE_HEAD")) {
-			let hash = hash(repo, &sha);
+			let hash = Revision::parse(repo, &sha);
 			Some(Mode::Merge(hash))
 		} else if let Ok(sha) = std::fs::read_to_string(path.join("CHERRY_PICK_HEAD")) {
-			let hash = hash(repo, &sha);
+			let hash = Revision::parse(repo, &sha);
 			Some(Mode::CherryPick(hash))
 		} else if let Ok(sha) = std::fs::read_to_string(path.join("REVERT_HEAD")) {
-			let hash = hash(repo, &sha);
+			let hash = Revision::parse(repo, &sha);
 			Some(Mode::Revert(hash))
 		} else {
 			None
@@ -168,14 +177,14 @@ impl Display for Mode {
 
 				Ok(())
 			}
-			Mode::Merge(ref hash) => {
-				write!(f, "mrg :{hash}")
+			Mode::Merge(ref rev) => {
+				write!(f, "mrg {rev}")
 			}
-			Mode::CherryPick(ref hash) => {
-				write!(f, "chp :{hash}")
+			Mode::CherryPick(ref rev) => {
+				write!(f, "chp {rev}")
 			}
-			Mode::Revert(ref hash) => {
-				write!(f, "rvt :{hash}")
+			Mode::Revert(ref rev) => {
+				write!(f, "rvt {rev}")
 			}
 		}
 	}
