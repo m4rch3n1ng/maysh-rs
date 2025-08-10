@@ -177,7 +177,7 @@ fn git() -> Result<String, Box<dyn std::error::Error>> {
 
 enum Start {
 	Root,
-	User
+	User,
 }
 
 impl Display for Start {
