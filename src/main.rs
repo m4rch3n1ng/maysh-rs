@@ -34,16 +34,13 @@ enum Head {
 impl Head {
 	fn new(repo: &Repository) -> Option<Self> {
 		let head = repo.head().ok()?;
-		match head.referent_name() {
-			Some(branch) => {
-				let branch = branch.shorten();
-				Some(Head::Branch(branch.to_owned()))
-			}
-			None => {
-				let hash = head.id()?;
-				let hash = Revision::new(hash);
-				Some(Head::Commit(hash))
-			}
+		if let Some(branch) = head.referent_name() {
+			let branch = branch.shorten();
+			Some(Head::Branch(branch.to_owned()))
+		} else {
+			let hash = head.id()?;
+			let hash = Revision::new(hash);
+			Some(Head::Commit(hash))
 		}
 	}
 }
