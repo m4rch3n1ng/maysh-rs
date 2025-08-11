@@ -234,8 +234,15 @@ struct Dir(PathBuf);
 
 impl Dir {
 	fn cwd() -> Self {
-		let path = std::env::current_dir().unwrap_or_default();
-		Dir(path)
+		let cwd = (std::env::current_dir().ok())
+			.or_else(|| std::env::var_os("PWD").map(PathBuf::from))
+			.unwrap_or_default();
+
+		if std::env::home_dir().is_some_and(|home| home == cwd) {
+			Dir(PathBuf::from("~"))
+		} else {
+			Dir(cwd)
+		}
 	}
 }
 
