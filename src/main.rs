@@ -82,7 +82,7 @@ enum Mode {
 	Rebase,
 	AmRbs,
 	RebaseInt(Option<Head>, Option<Status>),
-	Bisect(Option<String>),
+	Bisect(Option<Revision>),
 	Merge(Revision),
 	CherryPick(Revision),
 	Revert(Revision),
@@ -115,25 +115,19 @@ impl Mode {
 				None
 			};
 
-			let status = if let Ok(num) = std::fs::read_to_string(path.join("msgnum"))
-				&& let Ok(end) = std::fs::read_to_string(path.join("end"))
-			{
-				let status = Status {
+			let status = std::fs::read_to_string(path.join("msgnum"))
+				.and_then(|num| Ok((num, std::fs::read_to_string(path.join("end"))?)))
+				.map(|(num, end)| Status {
 					num: trim_in_place(num),
 					end: trim_in_place(end),
-				};
-				Some(status)
-			} else {
-				None
-			};
+				})
+				.ok();
 
 			Some(Mode::RebaseInt(branch, status))
 		} else if path.join("BISECT_LOG").is_file() {
-			let branch = std::fs::read_to_string(path.join("BISECT_START"))
-				.ok()
-				.map(trim_in_place);
-
-			Some(Mode::Bisect(branch))
+			let revision = (std::fs::read_to_string(path.join("BISECT_START")).ok())
+				.map(|start| Revision::parse(repo, &start));
+			Some(Mode::Bisect(revision))
 		} else if let Ok(sha) = std::fs::read_to_string(path.join("MERGE_HEAD")) {
 			let hash = Revision::parse(repo, &sha);
 			Some(Mode::Merge(hash))
