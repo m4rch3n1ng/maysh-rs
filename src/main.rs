@@ -5,12 +5,6 @@ use std::{
 	path::{Path, PathBuf},
 };
 
-fn trim_in_place(mut string: String) -> String {
-	let trimmed = string.trim_end();
-	string.truncate(trimmed.len());
-	string
-}
-
 #[derive(Debug)]
 struct Revision(Prefix);
 
@@ -64,12 +58,24 @@ impl Display for Head {
 }
 
 #[derive(Debug)]
-struct Status {
-	num: String,
-	end: String,
+struct Progress {
+	num: usize,
+	end: usize,
 }
 
-impl Display for Status {
+impl Progress {
+	fn new(path: &Path, num: &'static str, end: &'static str) -> Option<Self> {
+		let num = std::fs::read_to_string(path.join(num)).ok()?;
+		let num = num.trim().parse().ok()?;
+
+		let end = std::fs::read_to_string(path.join(end)).ok()?;
+		let end = end.trim().parse().ok()?;
+
+		Some(Progress { num, end })
+	}
+}
+
+impl Display for Progress {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		write!(f, "{}/{}", self.num, self.end)
 	}
@@ -78,10 +84,10 @@ impl Display for Status {
 #[derive(Debug)]
 #[must_use]
 enum Mode {
-	ApplyMailbox,
-	Rebase,
-	AmRbs,
-	RebaseInt(Option<Head>, Option<Status>),
+	ApplyMailbox(Option<Progress>),
+	Rebase(Option<Progress>),
+	AmRbs(Option<Progress>),
+	RebaseInt(Option<Head>, Option<Progress>),
 	Bisect(Option<Revision>),
 	Merge(Revision),
 	CherryPick(Revision),
@@ -92,14 +98,15 @@ impl Mode {
 	// thx https://github.com/Byron/gitoxide/blob/31801420e1bef1ebf32e14caf73ba29ddbc36443/gix/src/repository/state.rs#L3
 	// thx https://github.com/Byron/gitoxide/blob/31801420e1bef1ebf32e14caf73ba29ddbc36443/gix/src/state.rs#L3
 	fn new(repo: &Repository, path: &Path) -> Option<Mode> {
-		if path.join("rebase-apply/applying").is_file() {
-			Some(Mode::ApplyMailbox)
-		} else if path.join("rebase-apply/rebasing").is_file() {
-			// todo rebase steps / extra info ?
-			// idk how to get into this mode lol
-			Some(Mode::Rebase)
-		} else if path.join("rebase-apply").is_dir() {
-			Some(Mode::AmRbs)
+		if path.join("rebase-apply").is_dir() {
+			let progress = Progress::new(path, "rebase-apply/next", "rebase-apply/last");
+			if path.join("rebase-apply/applying").is_file() {
+				Some(Mode::ApplyMailbox(progress))
+			} else if path.join("rebase-apply/rebasing").is_file() {
+				Some(Mode::Rebase(progress))
+			} else {
+				Some(Mode::AmRbs(progress))
+			}
 		} else if path.join("rebase-merge").is_dir() {
 			let path = path.join("rebase-merge");
 
@@ -115,15 +122,8 @@ impl Mode {
 				None
 			};
 
-			let status = std::fs::read_to_string(path.join("msgnum"))
-				.and_then(|num| Ok((num, std::fs::read_to_string(path.join("end"))?)))
-				.map(|(num, end)| Status {
-					num: trim_in_place(num),
-					end: trim_in_place(end),
-				})
-				.ok();
-
-			Some(Mode::RebaseInt(branch, status))
+			let progress = Progress::new(&path, "msgnum", "end");
+			Some(Mode::RebaseInt(branch, progress))
 		} else if path.join("BISECT_LOG").is_file() {
 			let revision = (std::fs::read_to_string(path.join("BISECT_START")).ok())
 				.map(|start| Revision::parse(repo, &start));
@@ -146,9 +146,12 @@ impl Mode {
 impl Display for Mode {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
-			Mode::ApplyMailbox => write!(f, "am"),
-			Mode::Rebase => write!(f, "rbs"),
-			Mode::AmRbs => write!(f, "am/rbs"),
+			Mode::ApplyMailbox(None) => write!(f, "am"),
+			Mode::ApplyMailbox(Some(progress)) => write!(f, "am {progress}"),
+			Mode::Rebase(None) => write!(f, "rbs"),
+			Mode::Rebase(Some(progress)) => write!(f, "rbs {progress}"),
+			Mode::AmRbs(None) => write!(f, "am/rbs"),
+			Mode::AmRbs(Some(progress)) => write!(f, "am/rbs {progress}"),
 			Mode::RebaseInt(branch, status) => {
 				write!(f, "rbs")?;
 
