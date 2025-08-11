@@ -38,17 +38,17 @@ enum Head {
 }
 
 impl Head {
-	fn new(repo: &Repository) -> Self {
-		let head = repo.head().unwrap();
+	fn new(repo: &Repository) -> Option<Self> {
+		let head = repo.head().ok()?;
 		match head.referent_name() {
 			Some(branch) => {
 				let branch = branch.shorten();
-				Head::Branch(branch.to_owned())
+				Some(Head::Branch(branch.to_owned()))
 			}
 			None => {
-				let hash = head.id().unwrap();
+				let hash = head.id()?;
 				let hash = Revision::new(hash);
-				Head::Commit(hash)
+				Some(Head::Commit(hash))
 			}
 		}
 	}
@@ -192,17 +192,17 @@ impl Display for Mode {
 
 fn git() -> Result<String, Box<dyn std::error::Error>> {
 	let repo = gix::discover(".")?;
-	let branch = Head::new(&repo);
+	let branch = Head::new(&repo).ok_or("failed to get head")?;
 
 	let mut string = String::new();
-	write!(string, "{}", "(".green())?;
+	let _ = write!(string, "{}", "(".green());
 
 	let path = repo.path();
 	if let Some(mode) = Mode::new(&repo, path) {
-		write!(string, "{} ", mode.red())?;
+		let _ = write!(string, "{} ", mode.red());
 	}
 
-	write!(string, "{}{}", branch.green(), ")".green())?;
+	let _ = write!(string, "{}{}", branch.green(), ")".green());
 	Ok(string)
 }
 
