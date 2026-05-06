@@ -5,8 +5,8 @@ edition = "2024"
 license = "MIT"
 
 [dependencies]
-gix = { version = "0.77.0", default-features = false, features = ["revision"] }
-owo-colors = "4.2.3"
+gix = { version = "0.83.0", default-features = false, features = ["sha1", "revision"] }
+owo-colors = "4.3.0"
 
 [lints.clippy]
 uninlined_format_args = "warn"
